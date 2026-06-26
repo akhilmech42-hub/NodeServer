@@ -6,6 +6,13 @@ const fs = require('fs');
 const supabase = require('./supabaseClient'); /// database connect supabase
 
 const app = express();
+app.use((err, req, res, next) => {
+    console.error('EXPRESS ERROR:', err);
+    res.status(500).json({
+        status: false,
+        message: err.message
+    });
+});
 
 app.use((req, res, next) => {
     res.setHeader('Bypass-Tunnel-Reminder', 'true');
@@ -18,7 +25,7 @@ app.use(express.urlencoded({ extended: true })); // form-data support కోస�
 
 
 const PORT = 3000;
-const baseUrl='https://akhilserver.loca.lt';
+const baseUrl=' https://nodeserver-1-3zk7.onrender.com';
 
 // ✅ uploads folder లేకపోతే auto-create
 if (!fs.existsSync('uploads')) {
@@ -123,10 +130,7 @@ app.post('/user', async (req, res) => {
     }
 });
 
-app.use((req, res, next) => {
-    res.setHeader('Bypass-Tunnel-Reminder', 'true');
-    next();
-});
+
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
