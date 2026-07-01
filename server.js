@@ -3,9 +3,34 @@ const multer = require('multer'); /// image upload and image end points kosam
 const https = require('https');
 const fs = require('fs');
 
+const jwt = require('jsonwebtoken'); // npm install jsonwebtoken
 const supabase = require('./supabaseClient'); /// database connect supabase
 
 const app = express();
+
+/// token generated
+const JWT_SECRET = process.env.JWT_SECRET || 'akhil_super_secret_key_change_this';
+const JWT_EXPIRY = '7d';
+const DEFAULT_OTP = '1234'; // testing kosam fixed OTP
+
+function verifyToken(req, res, next) {
+    const authHeader = req.headers['authorization'];
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ status: false, message: 'Token Missing. Please Login Again.' });
+    }
+
+    const token = authHeader.split(' ')[1];
+
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.user = decoded; // { id, name, phone }
+        next();
+    } catch (e) {
+        return res.status(401).json({ status: false, message: 'Invalid or Expired Token. Please Login Again.' });
+    }
+}
+
 app.use((err, req, res, next) => {
     console.error('EXPRESS ERROR:', err);
     res.status(500).json({
@@ -222,32 +247,58 @@ app.get('/home', (req, res) => {
 
 
 
-app.post('/login', (req, res) =>{
-    console.log("Headers:", req.headers['content-type']); // ✅ Debug line
-    console.log("Body Data:", req.body); 
-    const { mobile, password } = req.body || {};
-      if (!mobile || !password) {
-        return res.status(400).json({
-            status: false,
-            message: 'Mobile and Password are required'
-        });
-    }
-    
-  if (
-        mobile === '9876543210' &&
-        password === '1234'
-    ) {
+app.post('/login', async (req, res) => {
+    try {
+        const { mobile, otp } = req.body || {};
+
+        if (!mobile || !otp) {
+            return res.status(400).json({ status: false, message: 'Mobile and OTP are required' });
+        }
+
+        if (otp !== DEFAULT_OTP) {
+            return res.status(401).json({ status: false, message: 'Invalid OTP' });
+        }
+
+        const { data: user, error } = await supabase
+            .from('students')
+            .select('*')
+            .eq('phone', mobile)
+            .single();
+
+        if (error || !user) {
+            return res.status(404).json({ status: false, message: 'User Not Found. Please Check Mobile Number.' });
+        }
+
+        const token = jwt.sign(
+            { id: user.id, name: user.name, phone: user.phone },
+            JWT_SECRET,
+            { expiresIn: JWT_EXPIRY }
+        );
+
+        res.setHeader('Authorization', `Bearer ${token}`); // header lo token
+
         return res.status(200).json({
             status: true,
-            message: 'Login Success'
+            message: 'Login Success',
+            token: token, // body lo kuda token (Flutter easy ga chadavataniki)
+            user: {
+                id: user.id, name: user.name, phone: user.phone,
+                age: user.age, class: user.class, gender: user.gender, dept: user.dept
+            }
         });
+    } catch (e) {
+        console.log('LOGIN ERROR:', e);
+        res.status(500).json({ status: false, message: 'Server Error' });
     }
+});
 
-    return res.status(401).json({
-        status: false,
-        message: 'Invalid Credentials'
-    });
-      
+const PUBLIC_PATHS = ['/login', '/home'];
+
+app.use((req, res, next) => {
+    if (PUBLIC_PATHS.includes(req.path)) {
+        return next();
+    }
+    verifyToken(req, res, next);
 });
 
 app.post('/fooditems',(req, res) =>{
